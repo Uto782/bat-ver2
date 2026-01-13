@@ -1,6 +1,6 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Routes, Route, Link, useLocation } from "react-router-dom";
-import { BleClient, Cue } from "./ble";
+import { BleClient, Cue, BleState } from "./ble";
 import { PhoneFrame, Card, Row, Pill, Button, Toggle, TextInput, Slider, Segmented, Modal } from "./ui";
 
 type Role = "operator" | "parent_setup" | "parent_home";
@@ -19,14 +19,24 @@ function cueLabel(cue: Cue): string {
 }
 
 function cueExplain(cue: Cue): string {
-  if (cue === "chance") return "いまはチャンス。応援してみよう。バットをトントン。";
-  if (cue === "pinch") return "いまはピンチ。じっと見て、次の動きを待とう。";
+  if (cue === "chance") return "いまはチャンス。応援してみよう。トントン。";
+  if (cue === "pinch") return "いまはピンチ。じっと見て次の動きを待とう。";
   return "いまはふつう。次の合図が来たら教えるね。";
 }
 
 export default function App() {
   const ble = useMemo(() => new BleClient(), []);
   const role = useRole();
+
+  const [bleState, setBleState] = useState<BleState>({ connected: false, deviceName: "" });
+
+  useEffect(() => {
+    ble.setOnStateChange((s) => setBleState({ ...s }));
+    return () => ble.setOnStateChange(null);
+  }, [ble]);
+
+  const connected = bleState.connected;
+  const deviceName = bleState.deviceName;
 
   const [demo, setDemo] = useState<boolean>(true);
   const [cue, setCue] = useState<Cue>("normal");
@@ -39,12 +49,7 @@ export default function App() {
 
   const [error, setError] = useState<string>("");
   const [helpOpen, setHelpOpen] = useState<boolean>(false);
-
-  const lastCueAtRef = useRef<number>(Date.now());
-  const [lastCueAt, setLastCueAt] = useState<number>(lastCueAtRef.current);
-
-  const connected = ble.state.connected;
-  const deviceName = ble.state.deviceName;
+  const [lastCueAt, setLastCueAt] = useState<number>(Date.now());
 
   async function doConnect() {
     setError("");
@@ -66,8 +71,7 @@ export default function App() {
 
   async function pushCue(next: Cue) {
     setCue(next);
-    lastCueAtRef.current = Date.now();
-    setLastCueAt(lastCueAtRef.current);
+    setLastCueAt(Date.now());
 
     if (demo) return;
     if (paused) return;
@@ -143,7 +147,7 @@ export default function App() {
                     {connected ? (
                       <Button label="切断" onClick={doDisconnect} variant="ghost" />
                     ) : (
-                      <Button label="接続" onClick={doConnect} variant="primary" disabled={demo} />
+                      <Button label="接続" onClick={doConnect} variant="primary" />
                     )}
                   </div>
                 </Row>
@@ -155,9 +159,7 @@ export default function App() {
                   value={demo}
                   onChange={(v) => {
                     setDemo(v);
-                    if (v) {
-                      setError("");
-                    }
+                    if (v) setError("");
                   }}
                 />
 
@@ -173,10 +175,10 @@ export default function App() {
                     onChange={setCharacteristicUuid}
                     placeholder="例 0000ffe1..."
                   />
-                  <div className="hint">デモがオフのとき、接続ボタンが有効になります</div>
+                  <div className="hint">実機送信するならUUIDをデバイス仕様に合わせてください</div>
                 </details>
 
-                {!ble.isSupported() && <div className="warnBox">この環境はWeb Bluetooth非対応です。ChromeまたはEdgeを推奨します。</div>}
+                {!ble.isSupported() && <div className="warnBox">この環境はWeb Bluetooth非対応です。Chrome/Edge推奨です。</div>}
                 {error && <div className="warnBox">{error}</div>}
               </Card>
 
@@ -250,7 +252,7 @@ export default function App() {
 
                 <Segmented
                   label="観戦モード"
-                  value={"parent_child"}
+                  value="parent_child"
                   options={[
                     { key: "parent_child", label: "親子" },
                     { key: "kids", label: "子ども" }
@@ -319,11 +321,7 @@ export default function App() {
 
                 <Row className="row_between">
                   <Button label="今なに？" onClick={() => setHelpOpen(true)} variant="primary" />
-                  <Button
-                    label={paused ? "一時停止中" : "一時停止"}
-                    onClick={() => setPaused(!paused)}
-                    variant="ghost"
-                  />
+                  <Button label={paused ? "一時停止中" : "一時停止"} onClick={() => setPaused(!paused)} variant="ghost" />
                 </Row>
 
                 <div className="sp12" />
@@ -366,12 +364,7 @@ export default function App() {
                 {error && <div className="warnBox">{error}</div>}
               </Card>
 
-              <Modal
-                open={helpOpen}
-                title="今なに？"
-                onClose={() => setHelpOpen(false)}
-                body={<div className="modalText">{cueExplain(cue)}</div>}
-              />
+              <Modal open={helpOpen} title="今なに？" onClose={() => setHelpOpen(false)} body={<div className="modalText">{cueExplain(cue)}</div>} />
             </PhoneFrame>
           }
         />
